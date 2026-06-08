@@ -1,0 +1,17 @@
+services:
+  querytube:
+    build: .
+    container_name: querytube_agent
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./temp:/app/temp
+    env_file:
+      - .env
+    environment:
+      TZ: Asia/Taipei
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

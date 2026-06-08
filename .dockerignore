@@ -1,0 +1,16 @@
+.git
+.gitignore
+.venv
+__pycache__
+*.py[cod]
+*.db-journal
+.env
+.env.*
+!.env.example
+data/*
+!data/.gitkeep
+temp/*
+!temp/.gitkeep
+*.md
+.cursor
+terminals
