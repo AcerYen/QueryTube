@@ -20,21 +20,19 @@ $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $TarPath = Join-Path $Root "dist\QueryTube-nas.tar.gz"
 $PackageScript = Join-Path $Root "scripts\package-for-nas.ps1"
 
-if (-not (Test-Path $TarPath)) {
-    Write-Host "找不到部署套件，先打包..." -ForegroundColor Yellow
-    & $PackageScript
-}
+Write-Host "=== 1/6 打包最新部署套件 ===" -ForegroundColor Cyan
+& $PackageScript
 
 $RemoteTar = "$NasPath/QueryTube-nas.tar.gz"
 $SshTarget = "${NasUser}@${NasHost}"
 
-Write-Host "=== 1/5 建立 NAS 目錄 ===" -ForegroundColor Cyan
+Write-Host "=== 2/6 建立 NAS 目錄 ===" -ForegroundColor Cyan
 ssh -p $Port $SshTarget "mkdir -p '$NasPath'"
 
-Write-Host "=== 2/5 上傳部署套件 ===" -ForegroundColor Cyan
+Write-Host "=== 3/6 上傳部署套件 ===" -ForegroundColor Cyan
 scp -P $Port $TarPath "${SshTarget}:${RemoteTar}"
 
-Write-Host "=== 3/5 解壓並設定權限（保留既有 data 與 .env）===" -ForegroundColor Cyan
+Write-Host "=== 4/6 解壓並設定權限（保留既有 data 與 .env）===" -ForegroundColor Cyan
 $RemoteCmd = @"
 cd '$NasPath' && \
 BACKUP_DIR=`$(mktemp -d) && \
@@ -62,7 +60,7 @@ if ($NasHasEnv -ne "yes") {
     }
 }
 
-Write-Host "=== 4/5 停止舊版 whisper 容器（若存在）===" -ForegroundColor Cyan
+Write-Host "=== 5/6 停止舊版 whisper 容器（若存在）===" -ForegroundColor Cyan
 $CleanupCmd = @"
 DOCKER_BIN=''
 for bin in /var/packages/ContainerManager/target/usr/bin/docker /var/packages/Docker/target/usr/bin/docker /usr/local/bin/docker /usr/bin/docker; do
@@ -75,7 +73,7 @@ fi
 "@
 ssh -p $Port $SshTarget $CleanupCmd
 
-Write-Host "=== 5/5 建置並啟動容器 ===" -ForegroundColor Cyan
+Write-Host "=== 6/6 建置並啟動容器 ===" -ForegroundColor Cyan
 $DeployCmd = @"
 cd '$NasPath' && \
 sudo bash scripts/deploy-nas.sh

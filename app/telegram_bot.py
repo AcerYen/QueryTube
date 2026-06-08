@@ -46,6 +46,8 @@ from config.settings import (
 
 logger = logging.getLogger(__name__)
 
+_background_tasks: set[asyncio.Task] = set()
+
 MAX_CAPTION_LENGTH = 1024
 MAX_MESSAGE_LENGTH = 4096
 ADD_CHANNEL_CALLBACK_PREFIX = "addch:"
@@ -360,25 +362,48 @@ async def _ensure_user(update: Update) -> tuple[str, bool]:
     return str(user.id), is_new
 
 
-async def _run_catchup(user_id: str, channel_ids: list[str], username: str | None) -> None:
+async def _run_catchup(
+    user_id: str,
+    channel_ids: list[str],
+    username: str | None,
+    display_name: str | None = None,
+) -> None:
     try:
-        await asyncio.to_thread(push_latest_videos_to_user, user_id, channel_ids, username)
+        summary = await asyncio.to_thread(
+            push_latest_videos_to_user,
+            user_id,
+            channel_ids,
+            username,
+            display_name,
+        )
+        notify_admin("推播結果", user_id, summary, username, display_name)
     except Exception as e:
         logger.error(f"Catch-up task failed for user {user_id}: {e}", exc_info=True)
-        send_telegram_message(
-            user_id,
-            "❌ 推播過程發生錯誤，請稍後使用 /push 重試。",
-        )
+        error_msg = "❌ 推播過程發生錯誤，請稍後使用 /push 重試。"
+        send_telegram_message(user_id, error_msg)
+        notify_admin("推播結果", user_id, error_msg, username, display_name)
 
 
-def _schedule_catchup(user_id: str, channel_ids: list[str], username: str | None) -> None:
+def _schedule_catchup(
+    user_id: str,
+    channel_ids: list[str],
+    username: str | None,
+    display_name: str | None = None,
+) -> None:
     if not channel_ids:
         return
-    asyncio.create_task(_run_catchup(user_id, channel_ids, username))
+    task = asyncio.create_task(_run_catchup(user_id, channel_ids, username, display_name))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
 
-def _schedule_channel_catchup(user_id: str, channel_id: str, username: str | None) -> None:
-    asyncio.create_task(_run_catchup(user_id, [channel_id], username))
+def _schedule_channel_catchup(
+    user_id: str,
+    channel_id: str,
+    username: str | None,
+    display_name: str | None = None,
+) -> None:
+    _schedule_catchup(user_id, [channel_id], username, display_name)
 
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -425,7 +450,7 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"\n\n📺 已為你加入 {len(added_channels)} 個預設頻道，"
                 "正在推播各頻道最新影片…"
             )
-            _schedule_catchup(user_id, added_channels, user.username)
+            _schedule_catchup(user_id, added_channels, user.username, user.full_name)
 
     await update.message.reply_text(text, parse_mode="HTML")
     notify_admin("用戶啟動", user_id, f"用戶 {_user_label(user)} 執行了 /start", user.username, user.full_name)
@@ -491,7 +516,7 @@ async def _add_channel_from_input(
         "正在推播此頻道最新影片…"
     )
     await update.message.reply_text(reply, parse_mode="HTML")
-    _schedule_channel_catchup(user_id, info["channel_id"], user.username)
+    _schedule_channel_catchup(user_id, info["channel_id"], user.username, user.full_name)
 
     detail = (
         f"動作：新增頻道\n"
@@ -703,7 +728,7 @@ async def pushall_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"⏳ 正在重新推播你訂閱的 {len(channel_ids)} 個頻道最新影片…"
     )
-    _schedule_catchup(user_id, channel_ids, user.username)
+    _schedule_catchup(user_id, channel_ids, user.username, user.full_name)
 
     notify_admin("重新推播", user_id, f"共 {len(channel_ids)} 個頻道", user.username, user.full_name)
     logger.info(f"Push-all requested by {user.id}: {len(channel_ids)} channel(s)")
