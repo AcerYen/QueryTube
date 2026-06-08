@@ -31,7 +31,7 @@ from app.fetcher import (
     parse_video_id,
     resolve_channel_input,
 )
-from app.notifier import notify_admin, send_telegram_message
+from app.notifier import notify_admin, notify_admin_push_copy, send_telegram_message
 from app.on_demand import summarize_shared_video
 from app.rate_limit import get_job_status
 from config.settings import (
@@ -787,12 +787,19 @@ async def _handle_shared_video(
     )
     await status_msg.delete()
 
-    detail = (
-        f"動作：影片摘要\n"
-        f"頻道：<b>{video['channel_title']}</b>\n"
-        f"影片：<a href=\"{watch_url}\">{html.escape(video['title'])}</a>"
+    notify_admin_push_copy(
+        user_id,
+        _format_video_summary(
+            video["title"],
+            video["channel_title"],
+            watch_url,
+            summary,
+        ),
+        thumbnail_url=video.get("thumbnail_url"),
+        username=user.username,
+        display_name=user.full_name,
+        action="影片摘要",
     )
-    notify_admin("影片摘要", user_id, detail, user.username, user.full_name)
     logger.info(f"On-demand summary for user {user.id}: {video['title']} ({video_id})")
 
 

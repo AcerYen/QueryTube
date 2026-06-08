@@ -239,16 +239,17 @@ def _deliver_push_content(
     return _send_long_message(chat_id, message)
 
 
-def _notify_admin_push_copy(
+def notify_admin_push_copy(
     user_id: str,
     message: str,
     thumbnail_url: Optional[str] = None,
     username: Optional[str] = None,
     display_name: Optional[str] = None,
+    action: str = "推播通知",
 ) -> bool:
     if not TELEGRAM_ADMIN_ID or str(user_id) == str(TELEGRAM_ADMIN_ID):
         return True
-    header = _format_admin_activity_header("推播通知", user_id, username, display_name).rstrip()
+    header = _format_admin_activity_header(action, user_id, username, display_name).rstrip()
     success = send_telegram_message(TELEGRAM_ADMIN_ID, header)
     if not success:
         return False
@@ -270,7 +271,7 @@ def send_video_notification(
     success = _deliver_push_content(chat_id, message, thumbnail_url)
 
     if success and cc_user_id:
-        _notify_admin_push_copy(
+        notify_admin_push_copy(
             cc_user_id,
             message,
             thumbnail_url=thumbnail_url,
