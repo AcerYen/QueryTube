@@ -1,7 +1,11 @@
 import os
 from dotenv import load_dotenv
 
+from config.version import __version__
+
 load_dotenv()
+
+APP_VERSION = os.getenv("APP_VERSION", __version__)
 
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")

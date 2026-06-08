@@ -35,6 +35,7 @@ from app.notifier import notify_admin, send_telegram_message
 from app.on_demand import summarize_shared_video
 from app.rate_limit import get_job_status
 from config.settings import (
+    APP_VERSION,
     CHANNEL_IDS,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_ADMIN_ID,
@@ -259,7 +260,8 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         job_line = "✅ 閒置（無背景任務）"
 
     text = (
-        "📊 <b>QueryTube 系統狀態</b>\n\n"
+        "📊 <b>QueryTube 系統狀態</b>\n"
+        f"版本：<code>{html.escape(APP_VERSION)}</code>\n\n"
         f"{job_line}\n"
         f"排程：{schedule}（{TZ}）\n"
         f"啟動掃描：{'是' if RUN_ON_STARTUP else '否'}\n"
