@@ -15,6 +15,12 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_WHISPER_MODEL = os.getenv("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo")
 
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+_fallback_models_str = os.getenv(
+    "GEMINI_FALLBACK_MODELS", "gemini-2.0-flash,gemini-2.0-flash-lite"
+)
+GEMINI_FALLBACK_MODELS = [
+    m.strip() for m in _fallback_models_str.split(",") if m.strip()
+]
 
 _channel_ids_str = os.getenv("CHANNEL_IDS", "")
 CHANNEL_IDS = [cid.strip() for cid in _channel_ids_str.split(",") if cid.strip()]
@@ -52,6 +58,16 @@ def format_check_times(times: list[str] | None = None) -> str:
 RUN_ON_STARTUP = os.getenv("RUN_ON_STARTUP", "false").lower() in ("true", "1", "yes")
 
 
+def _int_env(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return default
+
+
 def _float_env(name: str, default: float) -> float:
     raw = os.getenv(name)
     if raw is None:
@@ -65,6 +81,7 @@ def _float_env(name: str, default: float) -> float:
 # API 呼叫間隔（秒），避免觸發免費額度限制
 YOUTUBE_API_DELAY = _float_env("YOUTUBE_API_DELAY", 0.5)
 GEMINI_API_DELAY = _float_env("GEMINI_API_DELAY", 6.5)
+GEMINI_MAX_RETRIES = _int_env("GEMINI_MAX_RETRIES", 5)
 TRANSCRIPT_DELAY = _float_env("TRANSCRIPT_DELAY", 2.0)
 CHANNEL_PROCESS_DELAY = _float_env("CHANNEL_PROCESS_DELAY", 3.0)
 VIDEO_PROCESS_DELAY = _float_env("VIDEO_PROCESS_DELAY", 2.0)
