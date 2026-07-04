@@ -11,7 +11,7 @@
 | **QueryTube Agent** | 排程掃描頻道、產生摘要、推播 | `docker compose up` 或 `python app/main.py` |
 | **Groq Whisper** | 無官方字幕時，語音轉文字 | Groq 雲端 API（無需額外容器） |
 | **Telegram Bot** | 訂閱管理、即時推播 | 內建於 Agent，無需另起 |
-| **LINE Bot**（可選） | 群組／私訊貼連結被動摘要（無訂閱） | 內建 webhook；需 Cloudflare Tunnel |
+| **LINE Bot**（可選） | 群組／私訊貼連結被動摘要（無訂閱） | 內建 webhook；ngrok 暴露 HTTPS |
 | **Gemini** | 產出繁中摘要 | Google AI Studio API |
 
 ```
@@ -210,12 +210,28 @@ RUN_ON_STARTUP=true
 
 ## LINE 被動摘要（可選）
 
-僅摘要、無訂閱。群組或私訊貼 YouTube 連結即觸發（無需 @bot）。
+僅摘要、無訂閱。群組或私訊貼 YouTube 連結即觸發（無需 @bot）。**免買網域**，用 ngrok 免費靜態網域。
 
-1. LINE Developers：建立 Messaging API channel，關閉自動回覆，開啟「Allow bot to join group chats」
-2. `.env` 填入 `LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`
-3. 以 Cloudflare Tunnel 將 `https://你的網域/line/webhook` 轉到本機 `http://127.0.0.1:8080`（compose 已綁 localhost，不暴露公網）
-4. LINE 後台設定 Webhook URL 並 Verify；把官方帳號拉進群組
+1. [ngrok Dashboard](https://dashboard.ngrok.com/)：複製 **Authtoken**，並在 **Domains** 領取免費網域（如 `your-name.ngrok-free.app`）
+2. LINE Developers：建立 Messaging API channel，關閉自動回覆，開啟「Allow bot to join group chats」；複製 Channel secret / access token
+3. `.env` 填入：
+
+```env
+LINE_CHANNEL_SECRET=...
+LINE_CHANNEL_ACCESS_TOKEN=...
+NGROK_AUTHTOKEN=...
+NGROK_DOMAIN=your-name.ngrok-free.app
+```
+
+4. 啟動（含 ngrok profile）：
+
+```bash
+docker compose --profile line up -d --build
+```
+
+5. 確認 `curl http://127.0.0.1:8080/health` 與 `curl https://your-name.ngrok-free.app/health` 皆回 `ok`
+6. LINE Webhook URL 設為 `https://your-name.ngrok-free.app/line/webhook` → Verify → Use webhook ON
+7. 把官方帳號拉進群組，貼 YouTube 連結測試
 
 回覆策略：Reply「正在整理…」（不計額度）→ Push 摘要（計額度；群組依人數計則）。詳見 [README.md](./README.md#4-line-被動摘要可選)。
 
@@ -239,6 +255,8 @@ RUN_ON_STARTUP=true
 | `LINE_CHANNEL_SECRET` | — | （可選）LINE Channel secret |
 | `LINE_CHANNEL_ACCESS_TOKEN` | — | （可選）LINE Channel access token |
 | `LINE_WEBHOOK_PORT` | `8080` | LINE webhook port |
+| `NGROK_AUTHTOKEN` | — | （可選）ngrok authtoken |
+| `NGROK_DOMAIN` | — | （可選）ngrok 靜態網域（`xxx.ngrok-free.app`） |
 
 ---
 

@@ -10,7 +10,7 @@ services:
       - .env
     environment:
       TZ: Asia/Taipei
-    # LINE webhook: bind to localhost only (Cloudflare Tunnel / reverse proxy on host).
+    # LINE webhook: bind to localhost only (ngrok on host / host network).
     # Omit or leave unused when LINE credentials are not set.
     ports:
       - "127.0.0.1:8080:8080"
@@ -19,3 +19,19 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  # Optional: expose LINE webhook via ngrok (no custom domain required).
+  # Start with: docker compose --profile line up -d
+  # Requires NGROK_AUTHTOKEN and NGROK_DOMAIN in .env
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: querytube_ngrok
+    profiles: ["line"]
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    command:
+      - "http"
+      - "127.0.0.1:8080"
+      - "--domain=${NGROK_DOMAIN}"
