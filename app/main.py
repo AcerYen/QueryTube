@@ -12,6 +12,8 @@ from config.settings import (
     GEMINI_API_KEY,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_ADMIN_ID,
+    LINE_CHANNEL_SECRET,
+    LINE_CHANNEL_ACCESS_TOKEN,
 )
 from app.database import (
     init_db,
@@ -27,6 +29,7 @@ from app.brain import summarize_video
 from app.notifier import broadcast_video_notifications
 from app.rate_limit import exclusive_job, wait_between_channels, wait_between_videos
 from app.telegram_bot import start_telegram_bot
+from app.line_bot import start_line_bot
 
 logging.basicConfig(
     level=logging.INFO,
@@ -160,6 +163,13 @@ def main():
     bot_thread = threading.Thread(target=start_telegram_bot, daemon=True)
     bot_thread.start()
     logger.info("Telegram bot started for channel management.")
+
+    if LINE_CHANNEL_SECRET and LINE_CHANNEL_ACCESS_TOKEN:
+        line_thread = threading.Thread(target=start_line_bot, daemon=True)
+        line_thread.start()
+        logger.info("LINE bot started for passive YouTube summaries.")
+    else:
+        logger.info("LINE credentials not set, LINE bot disabled.")
 
     setup_schedule()
     channel_count = len(get_all_channel_ids())

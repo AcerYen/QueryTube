@@ -11,6 +11,7 @@
 | **QueryTube Agent** | 排程掃描頻道、產生摘要、推播 | `docker compose up` 或 `python app/main.py` |
 | **Groq Whisper** | 無官方字幕時，語音轉文字 | Groq 雲端 API（無需額外容器） |
 | **Telegram Bot** | 訂閱管理、即時推播 | 內建於 Agent，無需另起 |
+| **LINE Bot**（可選） | 群組／私訊貼連結被動摘要（無訂閱） | 內建 webhook；需 Cloudflare Tunnel |
 | **Gemini** | 產出繁中摘要 | Google AI Studio API |
 
 ```
@@ -32,6 +33,7 @@ YouTube API ──► QueryTube Agent ──► Gemini ──► Telegram 推播
 | **Telegram Bot Token** | Telegram 搜尋 [@BotFather](https://t.me/BotFather) → `/newbot` 建立 Bot |
 | **Telegram User ID** | 搜尋 [@userinfobot](https://t.me/userinfobot) 或 [@getidsbot](https://t.me/getidsbot) 查詢自己的數字 ID |
 | **Groq API**（無字幕備援） | [console.groq.com/keys](https://console.groq.com/keys) → 建立 API Key |
+| **LINE Channel secret / access token**（可選） | [LINE Developers](https://developers.line.biz/) → Messaging API channel |
 
 ### 2. 環境需求
 
@@ -202,6 +204,20 @@ RUN_ON_STARTUP=true
 - [ ] **Catch-up 推播**：新增頻道或首次 `/start` 後，收到最新影片摘要
 - [ ] **排程推播**：等到 `CHECK_TIMES` 設定的時間，或設 `RUN_ON_STARTUP=true` 立即觸發
 - [ ] **Groq 備援**（可選）：找一支無官方字幕的影片測試，log 應出現 Groq 轉錄流程
+- [ ] **LINE 被動摘要**（可選）：未設定 LINE 時 log 顯示 `LINE bot disabled`；設定後貼 YouTube 連結應先收到「正在整理…」再收到摘要。Telegram 功能不受影響
+
+---
+
+## LINE 被動摘要（可選）
+
+僅摘要、無訂閱。群組或私訊貼 YouTube 連結即觸發（無需 @bot）。
+
+1. LINE Developers：建立 Messaging API channel，關閉自動回覆，開啟「Allow bot to join group chats」
+2. `.env` 填入 `LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`
+3. 以 Cloudflare Tunnel 將 `https://你的網域/line/webhook` 轉到本機 `http://127.0.0.1:8080`（compose 已綁 localhost，不暴露公網）
+4. LINE 後台設定 Webhook URL 並 Verify；把官方帳號拉進群組
+
+回覆策略：Reply「正在整理…」（不計額度）→ Push 摘要（計額度；群組依人數計則）。詳見 [README.md](./README.md#4-line-被動摘要可選)。
 
 ---
 
@@ -220,6 +236,9 @@ RUN_ON_STARTUP=true
 | `CHECK_TIMES` | `20:00` | 每日掃描時間（24h，逗號分隔） |
 | `TZ` | `Asia/Taipei` | 排程時區 |
 | `RUN_ON_STARTUP` | `false` | `true` = 啟動時立即掃描一次 |
+| `LINE_CHANNEL_SECRET` | — | （可選）LINE Channel secret |
+| `LINE_CHANNEL_ACCESS_TOKEN` | — | （可選）LINE Channel access token |
+| `LINE_WEBHOOK_PORT` | `8080` | LINE webhook port |
 
 ---
 

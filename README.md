@@ -30,6 +30,8 @@ cp .env.example .env
 | `TELEGRAM_ADMIN_ID` | 管理員 Telegram User ID（可透過 [@userinfobot](https://t.me/userinfobot) 查詢） |
 | `CHANNEL_IDS` | 逗號分隔的 Channel ID（啟動時加入管理員訂閱清單，可選） |
 | `GROQ_API_KEY` | [Groq Console](https://console.groq.com/keys) 金鑰（無字幕備援轉錄，建議填） |
+| `LINE_CHANNEL_SECRET` | （可選）LINE Messaging API Channel secret |
+| `LINE_CHANNEL_ACCESS_TOKEN` | （可選）LINE Channel access token；與 secret 皆填才啟用 LINE 被動摘要 |
 
 ### 2. 啟動
 
@@ -56,7 +58,32 @@ Application started
 
 在 Telegram 對 Bot 傳送 `/start` 即可開始使用。
 
-### 4. 持久化
+### 4. LINE 被動摘要（可選）
+
+在 LINE **群組或私訊**貼上 YouTube 連結即可自動產出摘要，**無需 @bot**，也不提供訂閱功能（訂閱仍只用 Telegram）。
+
+回覆策略（省免費額度）：先以 **Reply** 回「正在整理…」（不計入月額度），完成後以 **Push** 送摘要（計入額度；群組依人數計算則數）。
+
+#### LINE Developers 設定
+
+1. 於 [LINE Developers](https://developers.line.biz/) 建立 Messaging API channel
+2. 關閉 Greeting messages / Auto-reply messages（避免與 webhook 搶回覆）
+3. 開啟 **Allow bot to join group chats**
+4. 將 Channel secret、Channel access token 填入 `.env` 的 `LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`
+5. Webhook URL 設為 `https://<你的網域>/line/webhook` 並 Verify
+
+#### Cloudflare Tunnel（建議：NAS 不開公網 port）
+
+NAS 若有私人資料，請用 Tunnel **只**暴露 QueryTube webhook，不要把整台 NAS 對外：
+
+1. 安裝並登入 [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/)
+2. 建立 tunnel，ingress 指到本機 `http://127.0.0.1:8080`（compose 已將容器 `8080` 綁在 host localhost）
+3. 公開路徑對應 `/line/webhook`（或整個 host 轉發即可，bot 只處理該 path）
+4. 將 HTTPS 網域填入 LINE Webhook URL
+
+未設定 LINE 憑證時，程式行為與先前相同，Telegram 不受影響。
+
+### 5. 持久化
 
 以下目錄已掛載 volume，重啟不會遺失已處理紀錄：
 
@@ -105,6 +132,9 @@ Application started
 | `VIDEO_PROCESS_DELAY` | `2.0` | 影片間處理間隔（秒） |
 | `GROQ_API_KEY` | — | 無字幕備援轉錄（建議填） |
 | `GROQ_WHISPER_MODEL` | `whisper-large-v3-turbo` | Groq Whisper 模型 |
+| `LINE_CHANNEL_SECRET` | — | （可選）LINE Channel secret |
+| `LINE_CHANNEL_ACCESS_TOKEN` | — | （可選）LINE Channel access token |
+| `LINE_WEBHOOK_PORT` | `8080` | LINE webhook 監聽 port |
 
 ---
 
@@ -143,3 +173,9 @@ python app/main.py
 
 **Q: 連續多片推播會被限流嗎？**  
 系統內建 Telegram 頻率限制保護（全域與單一聊天室間隔），並在收到 429 時自動等待重試。YouTube 與 Gemini 亦有呼叫間隔與配額錯誤重試，詳見 [QUICKSTART.md](./QUICKSTART.md#api-用量與頻率控制)。
+
+**Q: LINE 免費訊息額度？**  
+台灣輕用量方案每月約 200 則 Push（Reply 不計費）。群組 Push 依**群組成員數**計則。額度用完後摘要 Push 會失敗。詳見 [LINE Biz 訊息費用](https://tw.linebiz.com/faq/oa-price/message-price-list/)。
+
+**Q: 沒填 LINE 變數會怎樣？**  
+LINE bot 不啟動，Telegram 訂閱／推播／貼連結摘要行為不變。

@@ -11,6 +11,11 @@ YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_ADMIN_ID = os.getenv("TELEGRAM_ADMIN_ID")
+
+# LINE Messaging API（可選；兩者皆設定才啟用被動摘要，不做訂閱）
+LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "").strip()
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "").strip()
+
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_WHISPER_MODEL = os.getenv("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo")
 
@@ -77,6 +82,8 @@ def _float_env(name: str, default: float) -> float:
     except ValueError:
         return default
 
+
+LINE_WEBHOOK_PORT = _int_env("LINE_WEBHOOK_PORT", 8080)
 
 # API 呼叫間隔（秒），避免觸發免費額度限制
 YOUTUBE_API_DELAY = _float_env("YOUTUBE_API_DELAY", 0.5)
