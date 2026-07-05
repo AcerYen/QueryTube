@@ -48,7 +48,14 @@ echo "=== 停止舊版 whisper 容器（若存在）==="
 "${DOCKER[@]}" rm -f querytube_whisper 2>/dev/null || true
 
 echo "=== 建置並啟動 QueryTube ==="
-"${DOCKER[@]}" compose up -d --build --remove-orphans
+COMPOSE_PROFILE=""
+if grep -qE '^LINE_CHANNEL_SECRET=.+' .env 2>/dev/null \
+  && grep -qE '^LINE_CHANNEL_ACCESS_TOKEN=.+' .env 2>/dev/null \
+  && grep -qE '^NGROK_AUTHTOKEN=.+' .env 2>/dev/null; then
+  echo "LINE + ngrok 已設定，使用 --profile line"
+  COMPOSE_PROFILE="--profile line"
+fi
+"${DOCKER[@]}" compose ${COMPOSE_PROFILE} up -d --build --remove-orphans
 
 echo ""
 echo "=== 容器狀態 ==="
