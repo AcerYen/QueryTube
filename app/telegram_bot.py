@@ -60,6 +60,7 @@ ADD_CHANNEL_CALLBACK_PREFIX = "addch:"
 REMOVE_CHANNEL_SELECT_PREFIX = "rmchsel:"
 REMOVE_CHANNEL_CONFIRM_PREFIX = "rmchok:"
 REMOVE_CHANNEL_CANCEL_PREFIX = "rmchno:"
+USER_INFO_CALLBACK_PREFIX = "userinfo:"
 
 
 def _split_text(text: str, limit: int) -> list[str]:
@@ -164,6 +165,52 @@ def _build_remove_channel_confirm_keyboard(channel_id: str) -> InlineKeyboardMar
             ]
         ]
     )
+
+
+def _build_users_keyboard(users: list[dict]) -> InlineKeyboardMarkup:
+    rows = []
+    for user in users:
+        uid = str(user["telegram_user_id"])
+        label = _format_db_user_label(user)
+        admin_mark = " 🔑" if uid == str(TELEGRAM_ADMIN_ID) else ""
+        button_text = _truncate_button_label(
+            f"{label}{admin_mark} · {user['channel_count']}頻",
+            max_len=40,
+        )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    button_text,
+                    callback_data=f"{USER_INFO_CALLBACK_PREFIX}{uid}",
+                )
+            ]
+        )
+    return InlineKeyboardMarkup(rows)
+
+
+def _format_user_detail_text(user: dict, channels: list[dict]) -> str:
+    label = html.escape(_format_db_user_label(user))
+    target_id = str(user["telegram_user_id"])
+    is_target_admin = target_id == str(TELEGRAM_ADMIN_ID)
+
+    lines = [
+        f"👤 <b>用戶詳情</b>\n",
+        f"名稱：{label}",
+        f"ID：<code>{user['telegram_user_id']}</code>",
+        f"角色：{'管理員' if is_target_admin else '一般用戶'}",
+        f"註冊時間：{user['registered_at']}",
+        f"\n📺 <b>訂閱頻道</b>（{len(channels)} 個）",
+    ]
+    if not channels:
+        lines.append("（無）")
+    else:
+        for i, ch in enumerate(channels, 1):
+            url = f"https://www.youtube.com/channel/{ch['channel_id']}"
+            lines.append(
+                f"{i}. <a href=\"{url}\">{html.escape(ch['channel_title'])}</a>\n"
+                f"   <code>{ch['channel_id']}</code> · 加入 {ch['added_at']}"
+            )
+    return "\n".join(lines)
 
 
 async def _send_video_summary(
@@ -349,7 +396,7 @@ def _admin_commands_help() -> str:
     return (
         "\n\n<b>管理員指令：</b>\n"
         "/status — 查看系統執行狀態\n"
-        "/users — 列出所有用戶\n"
+        "/users — 列出所有用戶（可點選查看詳情）\n"
         "/user &lt;Telegram ID&gt; — 查詢指定用戶詳情"
     )
 
@@ -397,7 +444,7 @@ async def users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📭 目前尚無註冊用戶。")
         return
 
-    lines = [f"👥 <b>用戶清單</b>（共 {len(users)} 人）\n"]
+    lines = [f"👥 <b>用戶清單</b>（共 {len(users)} 人）\n點選下方按鈕查看詳情\n"]
     for i, user in enumerate(users, 1):
         label = html.escape(_format_db_user_label(user))
         admin_mark = " 🔑" if str(user["telegram_user_id"]) == str(TELEGRAM_ADMIN_ID) else ""
@@ -409,8 +456,16 @@ async def users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     parts = _split_text("\n".join(lines), MAX_MESSAGE_LENGTH)
-    for part in parts:
-        await update.message.reply_text(part, parse_mode="HTML", disable_web_page_preview=True)
+    keyboard = _build_users_keyboard(users)
+    for i, part in enumerate(parts):
+        # Attach selectable buttons on the last chunk so the list stays visible.
+        reply_markup = keyboard if i == len(parts) - 1 else None
+        await update.message.reply_text(
+            part,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=reply_markup,
+        )
 
 
 async def userinfo_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -432,30 +487,36 @@ async def userinfo_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     channels = list_user_channels(target_id)
-    label = html.escape(_format_db_user_label(user))
-    is_target_admin = str(target_id) == str(TELEGRAM_ADMIN_ID)
-
-    lines = [
-        f"👤 <b>用戶詳情</b>\n",
-        f"名稱：{label}",
-        f"ID：<code>{user['telegram_user_id']}</code>",
-        f"角色：{'管理員' if is_target_admin else '一般用戶'}",
-        f"註冊時間：{user['registered_at']}",
-        f"\n📺 <b>訂閱頻道</b>（{len(channels)} 個）",
-    ]
-    if not channels:
-        lines.append("（無）")
-    else:
-        for i, ch in enumerate(channels, 1):
-            url = f"https://www.youtube.com/channel/{ch['channel_id']}"
-            lines.append(
-                f"{i}. <a href=\"{url}\">{html.escape(ch['channel_title'])}</a>\n"
-                f"   <code>{ch['channel_id']}</code> · 加入 {ch['added_at']}"
-            )
-
-    parts = _split_text("\n".join(lines), MAX_MESSAGE_LENGTH)
+    parts = _split_text(_format_user_detail_text(user, channels), MAX_MESSAGE_LENGTH)
     for part in parts:
         await update.message.reply_text(part, parse_mode="HTML", disable_web_page_preview=True)
+
+
+async def userinfo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not query or not query.data or not query.data.startswith(USER_INFO_CALLBACK_PREFIX):
+        return
+
+    user_id, _ = await _ensure_user(update)
+    if not _is_admin(user_id):
+        await query.answer("此功能僅限管理員使用。", show_alert=True)
+        return
+
+    target_id = query.data[len(USER_INFO_CALLBACK_PREFIX):].strip()
+    if not target_id:
+        await query.answer("無法辨識用戶。", show_alert=True)
+        return
+
+    user = get_user(target_id)
+    if not user:
+        await query.answer("找不到此用戶。", show_alert=True)
+        return
+
+    await query.answer()
+    channels = list_user_channels(target_id)
+    parts = _split_text(_format_user_detail_text(user, channels), MAX_MESSAGE_LENGTH)
+    for part in parts:
+        await query.message.reply_text(part, parse_mode="HTML", disable_web_page_preview=True)
 
 
 def _user_label(user) -> str:
@@ -964,6 +1025,9 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(add_channel_callback, pattern=f"^{ADD_CHANNEL_CALLBACK_PREFIX}"))
     app.add_handler(
         CallbackQueryHandler(explain_video_callback, pattern=f"^{EXPLAIN_CALLBACK_PREFIX}")
+    )
+    app.add_handler(
+        CallbackQueryHandler(userinfo_callback, pattern=f"^{USER_INFO_CALLBACK_PREFIX}")
     )
     app.add_handler(
         CallbackQueryHandler(remove_channel_select_callback, pattern=f"^{REMOVE_CHANNEL_SELECT_PREFIX}")
