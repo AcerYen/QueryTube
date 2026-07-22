@@ -66,6 +66,7 @@ def push_latest_video_to_user(
         thumbnail_url=video.get("thumbnail_url"),
         cc_user_id=user_id,
         cc_username=username,
+        video_id=video_id,
     ):
         if not is_video_processed(video_id):
             mark_video_processed(video_id, channel_id)

@@ -120,6 +120,7 @@ def process_channel(channel_id: str):
             summary=summary,
             thumbnail_url=video.get("thumbnail_url"),
             user_labels=_subscriber_labels(subscribers),
+            video_id=video_id,
         ):
             mark_video_processed(video_id, channel_id)
         else:

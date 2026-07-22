@@ -14,6 +14,21 @@ logger = logging.getLogger(__name__)
 TELEGRAM_API_BASE = "https://api.telegram.org/bot{token}/{method}"
 MAX_MESSAGE_LENGTH = 4096
 MAX_CAPTION_LENGTH = 1024
+EXPLAIN_CALLBACK_PREFIX = "explain:"
+
+
+def build_explain_reply_markup(video_id: str) -> dict:
+    """Inline keyboard JSON for Telegram HTTP API."""
+    return {
+        "inline_keyboard": [
+            [
+                {
+                    "text": "📖 完整說明",
+                    "callback_data": f"{EXPLAIN_CALLBACK_PREFIX}{video_id}",
+                }
+            ]
+        ]
+    }
 
 
 class TelegramRateLimiter:
@@ -121,22 +136,24 @@ def send_telegram_message(
     text: str,
     parse_mode: str = "HTML",
     disable_preview: bool = False,
+    reply_markup: Optional[dict] = None,
 ) -> bool:
     if not TELEGRAM_BOT_TOKEN:
         logger.warning("TELEGRAM_BOT_TOKEN not set. Logging to console instead.")
         print(f"\n{'=' * 50}\nTo: {chat_id}\n{text}\n{'=' * 50}\n")
         return True
 
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": parse_mode,
+        "disable_web_page_preview": disable_preview,
+    }
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
+
     with _sender_lock:
-        return _api_request(
-            "sendMessage",
-            {
-                "chat_id": chat_id,
-                "text": text,
-                "parse_mode": parse_mode,
-                "disable_web_page_preview": disable_preview,
-            },
-        )
+        return _api_request("sendMessage", payload)
 
 
 def send_telegram_photo(
@@ -144,22 +161,24 @@ def send_telegram_photo(
     photo_url: str,
     caption: str,
     parse_mode: str = "HTML",
+    reply_markup: Optional[dict] = None,
 ) -> bool:
     if not TELEGRAM_BOT_TOKEN:
         logger.warning("TELEGRAM_BOT_TOKEN not set. Logging to console instead.")
         print(f"\n{'=' * 50}\nTo: {chat_id}\n[Photo: {photo_url}]\n{caption}\n{'=' * 50}\n")
         return True
 
+    payload = {
+        "chat_id": chat_id,
+        "photo": photo_url,
+        "caption": caption,
+        "parse_mode": parse_mode,
+    }
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
+
     with _sender_lock:
-        return _api_request(
-            "sendPhoto",
-            {
-                "chat_id": chat_id,
-                "photo": photo_url,
-                "caption": caption,
-                "parse_mode": parse_mode,
-            },
-        )
+        return _api_request("sendPhoto", payload)
 
 
 def _format_video_message(title: str, channel_title: str, video_url: str, summary: str) -> str:
@@ -225,18 +244,28 @@ def _deliver_push_content(
     chat_id: str,
     message: str,
     thumbnail_url: Optional[str] = None,
+    reply_markup: Optional[dict] = None,
 ) -> bool:
     if thumbnail_url:
         parts = _split_text(message, MAX_CAPTION_LENGTH)
-        success = send_telegram_photo(chat_id, thumbnail_url, parts[0])
+        success = send_telegram_photo(
+            chat_id, thumbnail_url, parts[0], reply_markup=reply_markup
+        )
         if not success:
-            success = _send_long_message(chat_id, message)
-        elif len(parts) > 1:
-            for part in parts[1:]:
-                if not send_telegram_message(chat_id, part):
-                    success = False
+            return _deliver_push_content(chat_id, message, reply_markup=reply_markup)
+        for part in parts[1:]:
+            if not send_telegram_message(chat_id, part):
+                success = False
         return success
-    return _send_long_message(chat_id, message)
+
+    parts = _split_text(message, MAX_MESSAGE_LENGTH)
+    success = send_telegram_message(chat_id, parts[0], reply_markup=reply_markup)
+    if not success:
+        return False
+    for part in parts[1:]:
+        if not send_telegram_message(chat_id, part):
+            success = False
+    return success
 
 
 def notify_admin_push_copy(
@@ -246,6 +275,7 @@ def notify_admin_push_copy(
     username: Optional[str] = None,
     display_name: Optional[str] = None,
     action: str = "推播通知",
+    reply_markup: Optional[dict] = None,
 ) -> bool:
     if not TELEGRAM_ADMIN_ID or str(user_id) == str(TELEGRAM_ADMIN_ID):
         return True
@@ -253,7 +283,9 @@ def notify_admin_push_copy(
     success = send_telegram_message(TELEGRAM_ADMIN_ID, header)
     if not success:
         return False
-    return _deliver_push_content(TELEGRAM_ADMIN_ID, message, thumbnail_url)
+    return _deliver_push_content(
+        TELEGRAM_ADMIN_ID, message, thumbnail_url, reply_markup=reply_markup
+    )
 
 
 def send_video_notification(
@@ -266,9 +298,13 @@ def send_video_notification(
     cc_user_id: Optional[str] = None,
     cc_username: Optional[str] = None,
     cc_display_name: Optional[str] = None,
+    video_id: Optional[str] = None,
 ) -> bool:
     message = _format_video_message(title, channel_title, video_url, summary)
-    success = _deliver_push_content(chat_id, message, thumbnail_url)
+    reply_markup = build_explain_reply_markup(video_id) if video_id else None
+    success = _deliver_push_content(
+        chat_id, message, thumbnail_url, reply_markup=reply_markup
+    )
 
     if success and cc_user_id:
         notify_admin_push_copy(
@@ -277,6 +313,7 @@ def send_video_notification(
             thumbnail_url=thumbnail_url,
             username=cc_username,
             display_name=cc_display_name,
+            reply_markup=reply_markup,
         )
 
     return success
@@ -290,6 +327,7 @@ def broadcast_video_notifications(
     summary: str,
     thumbnail_url: Optional[str] = None,
     user_labels: Optional[dict[str, str]] = None,
+    video_id: Optional[str] = None,
 ) -> bool:
     """
     Send video notifications to all subscribers with rate limiting.
@@ -315,6 +353,7 @@ def broadcast_video_notifications(
             thumbnail_url=thumbnail_url,
             cc_user_id=user_id,
             cc_username=username,
+            video_id=video_id,
         )
         any_success = any_success or ok
         all_success = all_success and ok

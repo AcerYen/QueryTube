@@ -31,8 +31,13 @@ from app.fetcher import (
     parse_video_id,
     resolve_channel_input,
 )
-from app.notifier import notify_admin, notify_admin_push_copy, send_telegram_message
-from app.on_demand import summarize_shared_video
+from app.notifier import (
+    EXPLAIN_CALLBACK_PREFIX,
+    notify_admin,
+    notify_admin_push_copy,
+    send_telegram_message,
+)
+from app.on_demand import explain_shared_video, summarize_shared_video
 from app.rate_limit import get_job_status
 from config.settings import (
     APP_VERSION,
@@ -83,13 +88,45 @@ def _format_video_summary(title: str, channel_title: str, video_url: str, summar
     )
 
 
-def _build_add_channel_keyboard(channel_id: str, channel_title: str) -> InlineKeyboardMarkup:
-    label = channel_title.strip() or channel_id
-    if len(label) > 28:
-        label = label[:27] + "…"
-    return InlineKeyboardMarkup(
-        [[InlineKeyboardButton(f"➕ 加入「{label}」", callback_data=f"{ADD_CHANNEL_CALLBACK_PREFIX}{channel_id}")]]
+def _format_full_explanation(
+    title: str, channel_title: str, video_url: str, explanation: str
+) -> str:
+    return (
+        f"📖 <b>完整說明</b>\n"
+        f"📺 <b>{html.escape(channel_title)}</b>\n\n"
+        f"<a href=\"{video_url}\">{html.escape(title)}</a>\n\n"
+        f"{html.escape(explanation)}"
     )
+
+
+def _build_explain_button(video_id: str) -> InlineKeyboardButton:
+    return InlineKeyboardButton(
+        "📖 完整說明",
+        callback_data=f"{EXPLAIN_CALLBACK_PREFIX}{video_id}",
+    )
+
+
+def _build_video_summary_keyboard(
+    video_id: str,
+    *,
+    channel_id: str | None = None,
+    channel_title: str | None = None,
+    offer_add_channel: bool = False,
+) -> InlineKeyboardMarkup:
+    rows = [[_build_explain_button(video_id)]]
+    if offer_add_channel and channel_id:
+        label = (channel_title or channel_id).strip() or channel_id
+        if len(label) > 28:
+            label = label[:27] + "…"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"➕ 加入「{label}」",
+                    callback_data=f"{ADD_CHANNEL_CALLBACK_PREFIX}{channel_id}",
+                )
+            ]
+        )
+    return InlineKeyboardMarkup(rows)
 
 
 def _truncate_button_label(text: str, max_len: int = 28) -> str:
@@ -216,6 +253,80 @@ async def add_channel_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     user_id, _ = await _ensure_user(update)
     channel_id = query.data[len(ADD_CHANNEL_CALLBACK_PREFIX):]
     await _add_channel_from_callback(update, context, user_id, channel_id)
+
+
+async def explain_video_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not query or not query.data or not query.data.startswith(EXPLAIN_CALLBACK_PREFIX):
+        return
+
+    user_id, _ = await _ensure_user(update)
+    user = query.from_user
+    video_id = query.data[len(EXPLAIN_CALLBACK_PREFIX):]
+    if not video_id:
+        await query.answer("無法辨識影片。", show_alert=True)
+        return
+
+    await query.answer("正在產生完整說明…")
+    status_msg = await query.message.reply_text("⏳ 正在產生加長版完整說明，請稍候…")
+
+    result = await asyncio.to_thread(explain_shared_video, video_id)
+    if not result["ok"]:
+        error_messages = {
+            "busy": "⏳ 系統正在處理其他任務，請稍後再試。",
+            "not_found": "❌ 找不到此影片，請稍後再試。",
+            "no_transcript": "❌ 無法取得影片字幕，暫時無法產生完整說明。",
+        }
+        if result["error"] == "no_transcript" and result.get("video"):
+            title = html.escape(result["video"]["title"])
+            error_messages["no_transcript"] = (
+                f"❌ 無法取得《{title}》的字幕，暫時無法產生完整說明。"
+            )
+        await status_msg.edit_text(error_messages.get(result["error"], "❌ 無法產生完整說明。"))
+        return
+
+    video = result["video"]
+    watch_url = f"https://www.youtube.com/watch?v={video_id}"
+    message = _format_full_explanation(
+        video["title"],
+        video["channel_title"],
+        watch_url,
+        result["explanation"],
+    )
+    parts = _split_text(message, MAX_MESSAGE_LENGTH)
+    await status_msg.edit_text(parts[0], parse_mode="HTML", disable_web_page_preview=False)
+    chat_id = query.message.chat_id
+    for part in parts[1:]:
+        await context.bot.send_message(chat_id=chat_id, text=part, parse_mode="HTML")
+
+    # Keep add-channel button if present; drop the explain button after success.
+    remaining_rows = []
+    if query.message.reply_markup:
+        for row in query.message.reply_markup.inline_keyboard:
+            kept = [
+                btn
+                for btn in row
+                if not (btn.callback_data or "").startswith(EXPLAIN_CALLBACK_PREFIX)
+            ]
+            if kept:
+                remaining_rows.append(kept)
+    try:
+        await query.edit_message_reply_markup(
+            reply_markup=InlineKeyboardMarkup(remaining_rows) if remaining_rows else None
+        )
+    except Exception:
+        logger.debug("Could not update reply markup after full explanation.", exc_info=True)
+
+    notify_admin(
+        "完整說明",
+        user_id,
+        f"影片：<b>{html.escape(video['title'])}</b>\n"
+        f"頻道：{html.escape(video['channel_title'])}\n"
+        f"<code>{video_id}</code>",
+        user.username,
+        user.full_name,
+    )
+    logger.info(f"Full explanation for user {user.id}: {video['title']} ({video_id})")
 
 
 def _is_admin(user_id: str) -> bool:
@@ -469,8 +580,8 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "　<code>youtube.com/@handle</code> 等格式\n\n"
         "或直接貼上頻道網址，Bot 會自動加入。\n\n"
         "直接貼上影片網址（如 <code>youtube.com/watch?v=...</code>），"
-        "Bot 會立即產生摘要；若尚未訂閱該頻道，"
-        "摘要下方會提供加入按鈕。\n\n"
+        "Bot 會立即產生摘要；摘要下方可點「📖 完整說明」取得加長版說明。"
+        "若尚未訂閱該頻道，也會提供加入按鈕。\n\n"
         "/remove\n"
         "　列出你的訂閱頻道供選擇，確認後移除\n"
         "/remove &lt;頻道 ID 或網址&gt;\n"
@@ -479,6 +590,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "　查看你目前訂閱的頻道\n\n"
         "/push\n"
         "　重新推播你目前訂閱的所有頻道最新影片\n\n"
+        "排程／手動推播的摘要訊息同樣可點「📖 完整說明」。\n"
         "推播時間由伺服器排程設定（CHECK_TIMES）。"
     )
     if _is_admin(user_id):
@@ -771,9 +883,14 @@ async def _handle_shared_video(
     summary = result["summary"]
     watch_url = f"https://www.youtube.com/watch?v={video_id}"
 
-    reply_markup = None
-    if video.get("channel_id") and not user_has_channel(user_id, video["channel_id"]):
-        reply_markup = _build_add_channel_keyboard(video["channel_id"], video["channel_title"])
+    reply_markup = _build_video_summary_keyboard(
+        video_id,
+        channel_id=video.get("channel_id"),
+        channel_title=video.get("channel_title"),
+        offer_add_channel=bool(
+            video.get("channel_id") and not user_has_channel(user_id, video["channel_id"])
+        ),
+    )
 
     await _send_video_summary(
         update,
@@ -845,6 +962,9 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("users", users_cmd))
     app.add_handler(CommandHandler("user", userinfo_cmd))
     app.add_handler(CallbackQueryHandler(add_channel_callback, pattern=f"^{ADD_CHANNEL_CALLBACK_PREFIX}"))
+    app.add_handler(
+        CallbackQueryHandler(explain_video_callback, pattern=f"^{EXPLAIN_CALLBACK_PREFIX}")
+    )
     app.add_handler(
         CallbackQueryHandler(remove_channel_select_callback, pattern=f"^{REMOVE_CHANNEL_SELECT_PREFIX}")
     )

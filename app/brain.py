@@ -42,6 +42,27 @@ def _build_prompt(title: str, channel_title: str, transcript: str) -> str:
 """
 
 
+def _build_full_explanation_prompt(title: str, channel_title: str, transcript: str) -> str:
+    return f"""
+你是一個專業的 YouTube 影片內容分析助手。
+請依影片字幕，產出加長版「完整說明」，讓讀者即使不看影片也能掌握重點與脈絡。
+
+【影片標題】：{title}
+【頻道名稱】：{channel_title}
+
+請以繁體中文回答，全文約 600–1000 字，結構如下：
+1. **核心主題**：2–3 句說明影片主要論點與討論範圍。
+2. **內容脈絡**：依影片推進順序，分段整理關鍵論述（每段 2–4 句，約 3–5 段）。
+3. **重點整理**：列出 5–8 點最有價值的資訊、數據、方法或洞見（每點一行）。
+4. **結論與建議**：總結影片立場，並用 1–2 句說明內容價值（不涉及特定受眾標籤）。
+
+要求：忠於字幕、具體明確、避免空話與行銷口吻；若字幕資訊不足請明白標示。
+
+【影片字幕內容】：
+{transcript}
+"""
+
+
 def _truncate_transcript(transcript: str, max_chars: int) -> str:
     if len(transcript) <= max_chars:
         return transcript
@@ -118,3 +139,17 @@ def summarize_video(title: str, channel_title: str, transcript: str) -> str:
             f"Error generating summary with Gemini ({', '.join(_gemini_models())}): {e}"
         )
         return _format_summary_error(e)
+
+
+def explain_video(title: str, channel_title: str, transcript: str) -> str:
+    """Uses Gemini to produce a longer full explanation of the video."""
+    transcript = _truncate_transcript(transcript, MAX_TRANSCRIPT_CHARS)
+    prompt = _build_full_explanation_prompt(title, channel_title, transcript)
+
+    try:
+        return _summarize_with_gemini(prompt)
+    except Exception as e:
+        logger.error(
+            f"Error generating full explanation with Gemini ({', '.join(_gemini_models())}): {e}"
+        )
+        return _format_summary_error(e).replace("大綱", "完整說明")
