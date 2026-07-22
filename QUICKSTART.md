@@ -102,7 +102,7 @@ docker compose ps
 ### 步驟 4：Telegram 首次使用
 
 1. 在 Telegram 搜尋你的 Bot 名稱
-2. 傳送 `/start` — 若 `.env` 有設定 `CHANNEL_IDS`，管理員會自動加入預設頻道並收到最新片 catch-up 推播
+2. 傳送 `/start` — 若管理員尚無訂閱且 `.env` 有 `CHANNEL_IDS`，會自動加入預設頻道並收到最新片 catch-up 推播（之後發布重啟不會再覆蓋你的訂閱）
 3. 傳送 `/add UCxxxxxxxx` 或頻道網址，加入要監控的頻道
 4. 傳送 `/list` 確認清單
 
@@ -248,7 +248,7 @@ docker compose --profile line up -d --build
 | `TELEGRAM_ADMIN_ID` | — | **必填** 管理員 User ID（同步接收用戶動態、可使用管理指令） |
 | `GROQ_API_KEY` | — | 無字幕備援轉錄（建議填） |
 | `GROQ_WHISPER_MODEL` | `whisper-large-v3-turbo` | Groq Whisper 模型 |
-| `CHANNEL_IDS` | 空 | 啟動時種入管理員訂閱清單 |
+| `CHANNEL_IDS` | 空 | 僅在管理員尚無訂閱時首次種入 |
 | `CHECK_TIMES` | `20:00` | 每日掃描時間（24h，逗號分隔） |
 | `TZ` | `Asia/Taipei` | 排程時區 |
 | `RUN_ON_STARTUP` | `false` | `true` = 啟動時立即掃描一次 |

@@ -41,7 +41,6 @@ def init_db():
         )
     ''')
     _migrate_legacy_channels(cursor)
-    _recover_orphan_channels(cursor)
     conn.commit()
     conn.close()
 
@@ -86,15 +85,17 @@ def _migrate_legacy_channels(cursor):
     )
     cursor.execute("DROP TABLE channels")
     cursor.execute("ALTER TABLE channels_new RENAME TO channels")
+    # One-time: reclaim unowned rows created during legacy schema migration only.
+    _assign_orphan_channels_to_admin(cursor)
 
 
-def _recover_orphan_channels(cursor):
-    """Assign channels without subscribers to the admin user."""
+def _assign_orphan_channels_to_admin(cursor):
+    """Assign channels without subscribers to the admin (legacy migration helper)."""
     if not TELEGRAM_ADMIN_ID:
         return
     cursor.execute(
         '''
-        SELECT c.channel_id, c.channel_title
+        SELECT c.channel_id
         FROM channels c
         LEFT JOIN user_channels uc ON uc.channel_id = c.channel_id
         WHERE uc.channel_id IS NULL
@@ -107,7 +108,7 @@ def _recover_orphan_channels(cursor):
         "INSERT OR IGNORE INTO users (telegram_user_id) VALUES (?)",
         (TELEGRAM_ADMIN_ID,),
     )
-    for channel_id, _ in orphans:
+    for (channel_id,) in orphans:
         cursor.execute(
             "INSERT OR IGNORE INTO user_channels (telegram_user_id, channel_id) VALUES (?, ?)",
             (TELEGRAM_ADMIN_ID, channel_id),
@@ -263,13 +264,17 @@ def get_all_channel_ids() -> List[str]:
 
 
 def seed_channels_from_env(channel_ids: List[str], admin_user_id: str, resolve_title=None):
-    """Import channel IDs from .env and assign them to the admin user."""
-    if not admin_user_id:
+    """Bootstrap CHANNEL_IDS onto the admin once (empty subscription list only).
+
+    After the admin has any subscriptions, later restarts/deploys must not
+    re-add env defaults — that would overwrite intentional /remove or /add edits.
+    """
+    if not admin_user_id or not channel_ids:
         return
     register_user(admin_user_id, display_name="Admin (env seed)")
+    if list_user_channels(admin_user_id):
+        return
     for channel_id in channel_ids:
-        if user_has_channel(admin_user_id, channel_id):
-            continue
         title = channel_id
         if resolve_title:
             info = resolve_title(channel_id)

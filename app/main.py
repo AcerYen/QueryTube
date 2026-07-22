@@ -61,7 +61,7 @@ def validate_channels() -> bool:
     if not channel_ids and not CHANNEL_IDS:
         logger.warning(
             "No channels subscribed yet. Users can add channels via Telegram /add, "
-            "or set CHANNEL_IDS in .env for admin seed."
+            "or set CHANNEL_IDS in .env for one-time admin bootstrap."
         )
     return True
 

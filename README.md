@@ -28,7 +28,7 @@ cp .env.example .env
 | `GEMINI_API_KEY` | [Google AI Studio](https://aistudio.google.com/) 金鑰 |
 | `TELEGRAM_BOT_TOKEN` | 透過 [@BotFather](https://t.me/BotFather) 建立的 Bot Token |
 | `TELEGRAM_ADMIN_ID` | 管理員 Telegram User ID（可透過 [@userinfobot](https://t.me/userinfobot) 查詢） |
-| `CHANNEL_IDS` | 逗號分隔的 Channel ID（啟動時加入管理員訂閱清單，可選） |
+| `CHANNEL_IDS` | 逗號分隔的 Channel ID（僅在管理員尚無訂閱時首次種入，可選） |
 | `GROQ_API_KEY` | [Groq Console](https://console.groq.com/keys) 金鑰（無字幕備援轉錄，建議填） |
 | `LINE_CHANNEL_SECRET` | （可選）LINE Messaging API Channel secret |
 | `LINE_CHANNEL_ACCESS_TOKEN` | （可選）LINE Channel access token；與 secret 皆填才啟用 LINE 被動摘要 |
